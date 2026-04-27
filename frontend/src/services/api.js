@@ -1,10 +1,18 @@
 // src/services/api.js
 
 import axios from "axios";
+// Get base URL from environment variable or default to localhost
+const baseURL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
+// Get API URL from environment
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
+
+const API = axios.create({
+  baseURL: API_BASE_URL,
+});
 
 // Create axios instance with base URL
 const API = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL: baseURL,
 });
 
 // 1. SET AUTHORIZATION HEADER
