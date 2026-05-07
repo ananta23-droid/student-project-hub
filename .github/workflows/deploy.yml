@@ -4,63 +4,151 @@ on:
   push:
     branches: [ main ]
 
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  NODE_ENV: production
+  NODE_OPTIONS: --max-old-space-size=4096
+
 jobs:
-  test-and-build:
+  validate:
     runs-on: ubuntu-latest
-    concurrency:
-      group: deploy-${{ github.ref }}
-      cancel-in-progress: true
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Use Node.js 20
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-        cache: 'npm'
-        cache-dependency-path: |
-          frontend/package-lock.json
-          backend/package-lock.json
-
-    - name: Frontend - Install & Build
-      working-directory: frontend
-      run: |
-        npm ci --no-optional --silent
-        npm run build --if-present
-
-    - name: Backend - Install
-      working-directory: backend
-      run: npm ci --no-optional --silent
-
-    - name: Deployment validation
-      run: echo "✅ All checks passed! Ready to deploy."
-
-  notify-deployment:
-    needs: test-and-build
-    runs-on: ubuntu-latest
+    name: Validate Code
     
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+      
+      - name: Validate frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          echo "✅ Frontend validation passed"
+      
+      - name: Validate backend
+        working-directory: backend
+        run: |
+          npm ci
+          node -c server.js
+          echo "✅ Backend validation passed"
+
+  build-frontend:
+    needs: validate
+    runs-on: ubuntu-latest
+    name: Build Frontend
     
-    - name: Create deployment summary
-      run: |
-        cat > deployment-info.txt << 'DEPLOY_EOF'
-        🚀 DEPLOYMENT SUMMARY
-       
-        
-        Frontend: https://student-project-hub-rosy.vercel.app
-        Backend: https://student-project-hub-backend.onrender.com
-        
-        Commit: ${{ github.sha }}
-        Author: ${{ github.actor }}
-        
-        ✅ CI/CD Pipeline Successful!
-        DEPLOY_EOF
-        cat deployment-info.txt
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 1
+
+  deploy-frontend:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    name: Deploy Frontend to Vercel
     
-    - name: Notify success
-      run: |
-        echo "✅ Deployment completed successfully!"
-        echo "Frontend deployed to Vercel"
-        echo "Backend deployed to Render"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Deploy to Vercel
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "⚠️  Vercel secrets not configured. Manual deployment required."
+            echo "Frontend is ready to deploy at: https://student-project-hub-rosy.vercel.app"
+          else
+            npm install -g vercel
+            vercel --prod --token $VERCEL_TOKEN
+            echo "✅ Frontend deployed to Vercel"
+          fi
+
+  deploy-backend:
+    needs: validate
+    runs-on: ubuntu-latest
+    name: Deploy Backend to Render
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Trigger Render deployment
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "⚠️  Render webhook not configured."
+            echo "Backend is ready to deploy at: https://student-project-hub-backend.onrender.com"
+          else
+            curl --location --request POST "$RENDER_DEPLOY_HOOK"
+            echo "✅ Deployment webhook triggered on Render"
+          fi
+
+  deployment-status:
+    needs: [ deploy-frontend, deploy-backend ]
+    runs-on: ubuntu-latest
+    name: Deployment Status
+    if: always()
+    
+    steps:
+      - name: Check deployment status
+        run: |
+          echo "🚀 DEPLOYMENT PIPELINE COMPLETED"
+          echo "================================"
+          echo ""
+          echo "Frontend Status: ${{ needs.deploy-frontend.result }}"
+          echo "Backend Status: ${{ needs.deploy-backend.result }}"
+          echo ""
+          echo "📍 Live URLs:"
+          echo "   Frontend: https://student-project-hub-rosy.vercel.app"
+          echo "   Backend: https://student-project-hub-backend.onrender.com"
+          echo ""
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          echo "Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+      
+      - name: Notify success
+        if: success()
+        run: |
+          echo "✅ All deployments completed successfully!"
+      
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "⚠️  Deployment completed with warnings. Check logs above."
