@@ -8,9 +8,6 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
-env:
-  NODE_ENV: production
-
 jobs:
   validate-backend:
     runs-on: ubuntu-latest
@@ -52,7 +49,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
       
-      - name: Install dependencies
+      - name: Install all dependencies (including dev)
         working-directory: frontend
         run: npm ci
       
@@ -60,14 +57,14 @@ jobs:
         working-directory: frontend
         run: npm run build
       
-      - name: Verify dist
+      - name: Verify build artifacts
         working-directory: frontend
         run: |
           if [ -d "dist" ]; then
             echo "✅ Frontend build successful"
             du -sh dist/
           else
-            echo "❌ Build failed"
+            echo "❌ Build failed - no dist directory"
             exit 1
           fi
 
@@ -85,7 +82,7 @@ jobs:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK" ]; then
-            echo "⚠️  Render webhook not configured"
+            echo "⚠️  Render webhook not configured - skipping"
           else
             curl --location --request POST "$RENDER_DEPLOY_HOOK"
             echo "✅ Render deployment triggered"
@@ -98,11 +95,19 @@ jobs:
     if: always()
     
     steps:
-      - name: Show status
+      - name: Show deployment summary
         run: |
-          echo "🚀 DEPLOYMENT COMPLETE"
-          echo "Frontend: https://student-project-hub-rosy.vercel.app"
-          echo "Backend: https://student-project-hub-backend.onrender.com"
+          echo "🚀 DEPLOYMENT PIPELINE COMPLETE"
+          echo "================================"
+          echo ""
+          echo "✅ Frontend Build: ${{ needs.build-frontend.result }}"
+          echo "✅ Backend Validation: ${{ needs.validate-backend.result }}"
+          echo "✅ Backend Deploy: ${{ needs.deploy-backend.result }}"
+          echo ""
+          echo "📍 Live URLs:"
+          echo "   Frontend: https://student-project-hub-rosy.vercel.app"
+          echo "   Backend: https://student-project-hub-backend.onrender.com"
           echo ""
           echo "Commit: ${{ github.sha }}"
           echo "Author: ${{ github.actor }}"
+          echo "Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
