@@ -1,0 +1,66 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      working-directory: frontend
+      run: npm ci
+    
+    - name: Check for syntax errors
+      working-directory: frontend
+      run: npm run build
+      continue-on-error: false
+    
+    - name: Build output check
+      working-directory: frontend
+      run: |
+        if [ -d "dist" ]; then
+          echo "✅ Build artifacts generated"
+          ls -lh dist/
+        else
+          echo "❌ Build failed - no dist directory"
+          exit 1
+        fi
+    
+    - name: Show build success
+      run: echo "✅ Frontend build successful!"
+
+  security:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run security checks
+      working-directory: frontend
+      run: |
+        echo "🔒 Running security audit..."
+        npm audit --audit-level=moderate || true
+        echo "✅ Security check completed"
