@@ -26,12 +26,12 @@ jobs:
     - name: Frontend - Install & Build
       working-directory: frontend
       run: |
-        npm ci --silent
+        npm ci --no-optional --silent
         npm run build --if-present
 
     - name: Backend - Install
       working-directory: backend
-      run: npm ci --silent
+      run: npm ci --no-optional --silent
 
     - name: Deployment validation
       run: echo "✅ All checks passed! Ready to deploy."
