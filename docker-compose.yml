@@ -1,7 +1,7 @@
 services:
   # MongoDB Database
   mongodb:
-    image: mongo:7.0-alpine
+    image: mongo:6.0
     container_name: student-hub-mongo
     ports:
       - "27017:27017"
@@ -15,6 +15,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - student-hub-network
 
   # Backend API
   backend:
@@ -27,8 +29,8 @@ services:
     environment:
       NODE_ENV: development
       MONGODB_URI: mongodb://admin:password123@mongodb:27017/student-hub?authSource=admin
-      JWT_SECRET: your_jwt_secret_key_here_change_in_production
-      FRONTEND_URL: http://localhost:3000
+      JWT_SECRET: 37dad16f2d07d04c5eae04ee6e1f08a72221f772c9c31db29fba617b7a44a2e2
+      FRONTEND_URL: http://localhost:5173
       PORT: 5000
     depends_on:
       mongodb:
@@ -44,14 +46,14 @@ services:
     networks:
       - student-hub-network
 
-  # Frontend (Optional - for local development)
+  # Frontend
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
     container_name: student-hub-frontend
     ports:
-      - "3000:5173"
+      - "5173:5173"
     environment:
       VITE_API_BASE_URL: http://localhost:5000/api
     depends_on:
